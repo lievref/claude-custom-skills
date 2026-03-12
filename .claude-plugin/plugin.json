@@ -1,0 +1,7 @@
+{
+  "name": "claude-custom-skills",
+  "description": "Custom skills for Claude Code — geospatial and domain-specific tools",
+  "author": {
+    "name": "lievref"
+  }
+}
