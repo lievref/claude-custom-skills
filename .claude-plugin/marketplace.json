@@ -13,7 +13,7 @@
       "author": {
         "name": "lievref"
       },
-      "source": ".",
+      "source": "./plugins/claude-custom-skills",
       "category": "productivity"
     }
   ]
