@@ -15,6 +15,9 @@ Query local SNV geospatial files (`.shp` or `.gpkg` from DNIT) to:
 
 ## Installation
 
-```bash
-claude plugin install https://github.com/lievref/claude-custom-skills
+Inside Claude Code (the TUI), run these two slash commands:
+
+```
+/plugin marketplace add lievref/claude-custom-skills
+/plugin install claude-custom-skills@lievref-claude-custom-skills
 ```
