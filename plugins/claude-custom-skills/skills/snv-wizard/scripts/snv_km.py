@@ -14,7 +14,8 @@ from pathlib import Path
 
 
 EPSG_GEO = 4674
-EPSG_UTM = 31983
+EPSG_UTM = 31983  # SIRGAS 2000 / UTM zone 23S — used only as last-resort fallback
+FUSOS_UTM_PATH = "/home/liev/.claude/fusos-utm-brasil/FUSOS_UTM.shp"
 DEFAULT_TABLE_SHEET = "Export_ICM"
 TABLE_SHEET_ALIASES = ("Export_ICM", "Export-ICM")
 
@@ -145,6 +146,57 @@ def _resolve_table_fields(headers) -> dict[str, str | None]:
             f"Headers found: {list(headers)}"
         )
     return resolved
+
+
+def _detect_epsg_utm(
+    lon: float,
+    lat: float,
+    fusos_path: str | None = FUSOS_UTM_PATH,
+) -> int:
+    """Auto-detect SIRGAS 2000 UTM EPSG for a given geographic point.
+
+    Strategy:
+    1. Spatial join of the point against FUSOS_UTM shapefile (MGRS grid).
+       CODE format: '<zone><band>' e.g. '23K'. Bands C-M = UTM South, N-Z = UTM North.
+       SIRGAS 2000 South EPSG = 31960 + zone, North EPSG = 31954 + zone.
+    2. Fallback: longitude-based formula if shapefile is unavailable or join misses.
+    3. Last resort: return EPSG_UTM (31983).
+    """
+    try:
+        if fusos_path and Path(fusos_path).exists():
+            import geopandas as gpd
+            from shapely.geometry import Point
+
+            fusos = gpd.read_file(fusos_path)
+            # Align CRS: use fusos native CRS for the point to avoid sjoin warnings
+            fusos_crs = fusos.crs or "EPSG:4326"
+            pt = gpd.GeoDataFrame(geometry=[Point(lon, lat)], crs="EPSG:4674").to_crs(fusos_crs)
+            joined = gpd.sjoin(pt, fusos[["CODE", "geometry"]], how="left", predicate="within")
+            if not joined.empty:
+                code = joined.iloc[0].get("CODE")
+                if code and isinstance(code, str):
+                    zone_match = re.search(r"\d+", str(code))
+                    band_match = re.search(r"[A-Za-z]+", str(code))
+                    if zone_match and band_match:
+                        zone_num = int(zone_match.group())
+                        is_south = band_match.group().upper() <= "M"
+                        epsg = (31960 if is_south else 31954) + zone_num
+                        if 31966 <= epsg <= 31992:  # valid SIRGAS 2000 UTM range
+                            return epsg
+
+        # Fallback: derive zone from longitude
+        zone_num = int((lon + 180) / 6) + 1
+        is_south = lat < 0
+        return (31960 if is_south else 31954) + zone_num
+
+    except Exception:
+        return EPSG_UTM
+
+
+def _centroid_from_gdf(gdf) -> tuple[float, float]:
+    """Return (lon, lat) centroid of a GeoDataFrame in geographic coordinates."""
+    bounds = gdf.to_crs(epsg=4674).total_bounds  # [minx, miny, maxx, maxy]
+    return float((bounds[0] + bounds[2]) / 2), float((bounds[1] + bounds[3]) / 2)
 
 
 def _load_snv_dataset(path: str, layer: str | None, epsg_src: int):
@@ -712,7 +764,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--snv-layer", type=str, default=None, help="Layer name when the SNV input is a GeoPackage")
     parser.add_argument("--epsg-src", type=int, default=EPSG_GEO, help="Input SNV EPSG. Default: 4674")
-    parser.add_argument("--epsg-utm", type=int, default=EPSG_UTM, help="Metric EPSG for calculations. Default: 31983")
+    parser.add_argument("--epsg-utm", type=int, default=0, help="Metric EPSG for calculations. Default: auto-detected from dataset centroid via FUSOS_UTM shapefile")
+    parser.add_argument("--fusos-path", type=str, default=FUSOS_UTM_PATH, help="Path to FUSOS_UTM shapefile for UTM zone auto-detection")
     return parser
 
 
@@ -723,10 +776,18 @@ def main() -> int:
     try:
         gdf, mapping = _load_snv_dataset(args.snv_path, args.snv_layer, args.epsg_src)
 
+        if args.epsg_utm != 0:
+            epsg_utm = args.epsg_utm
+        elif args.modo == "coord" and args.lat is not None and args.lon is not None:
+            epsg_utm = _detect_epsg_utm(args.lon, args.lat, args.fusos_path)
+        else:
+            cx, cy = _centroid_from_gdf(gdf)
+            epsg_utm = _detect_epsg_utm(cx, cy, args.fusos_path)
+
         if args.modo == "coord":
             if args.lat is None or args.lon is None:
                 parser.error("Mode 'coord' requires --lat and --lon")
-            result = _run_coord_lookup(gdf, mapping, args.lat, args.lon, args.raio, args.epsg_src, args.epsg_utm)
+            result = _run_coord_lookup(gdf, mapping, args.lat, args.lon, args.raio, args.epsg_src, epsg_utm)
             if result is None:
                 raise RuntimeError(
                     f"No SNV feature found within {args.raio} m of lat={args.lat}, lon={args.lon}. "
@@ -747,7 +808,7 @@ def main() -> int:
                 args.km_ini,
                 args.km_fim,
                 args.epsg_src,
-                args.epsg_utm,
+                epsg_utm,
             )
             if "error" in segment_result:
                 raise RuntimeError(segment_result["error"])
@@ -766,7 +827,7 @@ def main() -> int:
                 args.error_column,
                 args.uf_default,
                 args.epsg_src,
-                args.epsg_utm,
+                epsg_utm,
             )
 
         print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -13,7 +13,7 @@ Confirm these inputs before running anything:
 
 - An SNV dataset path. Accept `.shp` and `.gpkg`, including filtered subsets by `ul`, `uf`, or any other attribute, as long as the requested BR/km range exists in the file.
 - The task mode: coordinate lookup, segment extraction, or table enrichment.
-- The target CRS assumptions. Default to `EPSG:4674` for the SNV source and `EPSG:31983` for metric calculations unless the user gives a better UTM zone for the supplied subset.
+- The target CRS assumptions. Default to `EPSG:4674` for the SNV source. The metric UTM EPSG is **auto-detected** from the dataset centroid via spatial join with the FUSOS_UTM shapefile at `/home/liev/.claude/fusos-utm-brasil/FUSOS_UTM.shp` — do NOT pass `--epsg-utm` unless the user explicitly requests a specific zone.
 
 ## Dependencies
 
