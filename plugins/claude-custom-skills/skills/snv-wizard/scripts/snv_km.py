@@ -168,7 +168,6 @@ def _detect_epsg_utm(
             from shapely.geometry import Point
 
             fusos = gpd.read_file(fusos_path)
-            # Align CRS: use fusos native CRS for the point to avoid sjoin warnings
             fusos_crs = fusos.crs or "EPSG:4326"
             pt = gpd.GeoDataFrame(geometry=[Point(lon, lat)], crs="EPSG:4674").to_crs(fusos_crs)
             joined = gpd.sjoin(pt, fusos[["CODE", "geometry"]], how="left", predicate="within")
@@ -181,10 +180,9 @@ def _detect_epsg_utm(
                         zone_num = int(zone_match.group())
                         is_south = band_match.group().upper() <= "M"
                         epsg = (31960 if is_south else 31954) + zone_num
-                        if 31966 <= epsg <= 31992:  # valid SIRGAS 2000 UTM range
+                        if 31966 <= epsg <= 31992:
                             return epsg
 
-        # Fallback: derive zone from longitude
         zone_num = int((lon + 180) / 6) + 1
         is_south = lat < 0
         return (31960 if is_south else 31954) + zone_num
@@ -195,7 +193,7 @@ def _detect_epsg_utm(
 
 def _centroid_from_gdf(gdf) -> tuple[float, float]:
     """Return (lon, lat) centroid of a GeoDataFrame in geographic coordinates."""
-    bounds = gdf.to_crs(epsg=4674).total_bounds  # [minx, miny, maxx, maxy]
+    bounds = gdf.to_crs(epsg=4674).total_bounds
     return float((bounds[0] + bounds[2]) / 2), float((bounds[1] + bounds[3]) / 2)
 
 

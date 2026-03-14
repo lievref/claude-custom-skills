@@ -29,6 +29,12 @@ For table enrichment:
 python -m pip install openpyxl xlrd
 ```
 
+For SNV version lookup by date:
+
+```bash
+python -m pip install requests
+```
+
 `pyogrio` is the I/O backend used with GeoPandas in this environment. `openpyxl` is used to preserve `.xlsx` workbooks while adding the geometry columns. `xlrd` is used only to read legacy `.xls`, which is then written back as `.xlsx` or `.csv`.
 
 ## Coordinate to km
@@ -98,6 +104,53 @@ When exporting to `gpkg`, the script writes:
 
 - one line layer named after the output file;
 - one point layer named `marcos-km` with the internal integer kilometer markers inferred from the covered segment.
+
+## SNV version by date
+
+Use `scripts/snv_tabela_versoes.py` when:
+
+- The user asks which SNV version was active on a specific date.
+- The user has a table with a date column and wants to add a `versao_snv` column derived from it.
+- The user wants to verify whether the local SNV file matches the expected version for a given period.
+
+**Do not use** for regular coordinate lookups or segment extraction — the `versao_snv` field in those cases already comes from the SNV dataset itself.
+
+### Persistent CSV path
+
+Always use `~/.claude/snv_versoes.csv` as the CSV path (expands to `%USERPROFILE%\.claude\snv_versoes.csv` on Windows).
+
+### When to update
+
+Check if the CSV is stale before querying. It is stale when the last `data_final` entry is earlier than the first day of the current month, or when the file does not exist.
+
+Run the update only when stale:
+
+```bash
+python "<skill-dir>/scripts/snv_tabela_versoes.py" -o "~/.claude/snv_versoes.csv" --quiet
+```
+
+On first run (no CSV yet), this will make ~130 API calls and take 2–3 minutes. On subsequent runs within the same month it completes instantly with zero API calls.
+
+### Querying a single date
+
+After ensuring the CSV is current, query with Python:
+
+```python
+import sys
+sys.path.insert(0, "<skill-dir>/scripts")
+from snv_tabela_versoes import versao_por_data
+print(versao_por_data("2024-03-15", csv_path="~/.claude/snv_versoes.csv"))
+```
+
+Or pass the result directly to the user without running Python, by reading the CSV and applying a binary search mentally across the `data_inicial`/`data_final` columns.
+
+### Rebuilding from scratch
+
+If the CSV is corrupt or the user requests a full rebuild:
+
+```bash
+python "<skill-dir>/scripts/snv_tabela_versoes.py" -o "~/.claude/snv_versoes.csv" --forcar
+```
 
 ## Validation
 
